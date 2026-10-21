@@ -2,115 +2,162 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import streamlit as st
-from sklearn.datasets import make_blobs
-from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
-# Configuração da página do Streamlit
+# Configuração da página
 st.set_page_config(
     page_title="Controle de Qualidade - Usinagem", page_icon="⚙️", layout="wide"
 )
 
-st.title("⚙️ Sistema de Controle de Qualidade de Peças")
-st.markdown(
-    "Aplicação baseada em Machine Learning (**Support Vector Machine - SVM**)"
-    " para classificação automática de peças usinadas com base em **Peso** e"
-    " **Espessura**."
-)
-st.divider()
+
+# 1. Geração de dados sintéticos otimizada com cache
+@st.cache_data
+def load_data():
+  np.random.seed(42)
+  n_samples = 600
+
+  peso = np.random.normal(loc=150, scale=12, size=n_samples)
+  espessura = np.random.normal(loc=10, scale=1.2, size=n_samples)
+
+  classes = []
+  for p, e in zip(peso, espessura):
+    if 142 <= p <= 158 and 9.2 <= e <= 10.8:
+      classes.append("Aprovada")
+    elif (134 <= p < 142 or 158 < p <= 166) or (8.0 <= e < 9.2 or 10.8 < e <= 12.0):
+      classes.append("Retrabalho")
+    else:
+      classes.append("Refugo")
+
+  df = pd.DataFrame(
+      {"Peso_gramas": peso, "Espessura_mm": espessura, "Classe": classes}
+  )
+  return df
 
 
-# Geração de dados sintéticos e treinamento do modelo
+# 2. Treinamento do Modelo com Cache de Recursos
 @st.cache_resource
-def carregar_modelo_e_dados():
-  # Gerando dados sintéticos com 3 centros (classes) e 2 features
-  X, y = make_blobs(
-      n_samples=600, centers=3, n_features=2, cluster_std=1.8, random_state=42
-  )
+def train_model(df):
+  X = df[["Peso_gramas", "Espessura_mm"]]
+  y = df["Classe"]
 
-  # Ajustando a escala dos dados para simular valores reais de usinagem
-  # Feature 0: Peso em gramas (ex: 150g a 350g)
-  # Feature 1: Espessura em mm (ex: 5mm a 25mm)
-  X[:, 0] = X[:, 0] * 25 + 250
-  X[:, 1] = X[:, 1] * 3 + 12
-
-  # Divisão treino/teste
-  X_train, X_test, y_train, y_test = train_test_split(
-      X, y, test_size=0.2, random_state=42
-  )
-
-  # Normalização dos dados
   scaler = StandardScaler()
-  X_train_scaled = scaler.fit_transform(X_train)
-  X_test_scaled = scaler.transform(X_test)
+  X_scaled = scaler.fit_transform(X)
 
-  # Treinamento do Modelo SVM
-  model = SVC(kernel="rbf", C=1.0, random_state=42)
-  model.fit(X_train_scaled, y_train)
+  X_train, X_test, y_train, y_test = train_test_split(
+      X_scaled, y, test_size=0.2, random_state=42
+  )
 
-  return model, scaler, X_test_scaled, y_test
+  model = SVC(kernel="rbf", C=1.0, probability=True, random_state=42)
+  model.fit(X_train, y_train)
+
+  y_pred = model.predict(X_test)
+  acc = accuracy_score(y_test, y_pred)
+  cm = confusion_matrix(y_test, y_pred, labels=["Aprovada", "Retrabalho", "Refugo"])
+
+  return model, scaler, acc, cm
 
 
-model, scaler, X_test, y_test = carregar_modelo_e_dados()
+# Carregando dados e modelo
+df = load_data()
+model, scaler, accuracy, conf_matrix = train_model(df)
 
-# Layout em duas colunas
-col1, col2 = st.columns(2, gap="large")
+# --- INTERFACE DO USUÁRIO ---
+st.title("⚙️ Sistema Inteligente de Controle de Qualidade")
+st.markdown(
+    "Aplicação baseada em Machine Learning (**SVM**) para classificação e"
+    " inspeção de peças usinadas."
+)
+
+col1, col2 = st.columns([1, 1], gap="large")
 
 with col1:
-  st.subheader("🔍 Painel do Inspetor")
-  st.markdown("Insira os parâmetros da peça inspecionada:")
+  st.subheader("🛠️ Parâmetros da Peça")
+  peso_input = st.slider(
+      "Peso (gramas)",
+      float(df["Peso_gramas"].min()),
+      float(df["Peso_gramas"].max()),
+      float(df["Peso_gramas"].mean()),
+  )
+  espessura_input = st.slider(
+      "Espessura (mm)",
+      float(df["Espessura_mm"].min()),
+      float(df["Espessura_mm"].max()),
+      float(df["Espessura_mm"].mean()),
+  )
 
-  # Sliders para entrada de dados
-  peso = st.slider("Peso da Peça (g)", 100.0, 400.0, 250.0, 0.5)
-  espessura = st.slider("Espessura da Peça (mm)", 2.0, 25.0, 12.0, 0.1)
-
-  st.markdown("<br>", unsafe_allow_html=True)
-
-  # Botão de Avaliação
   if st.button("Avaliar Peça", type="primary", use_container_width=True):
-    # Preparar e normalizar a entrada do usuário
-    entrada = np.array([[peso, espessura]])
-    entrada_scaled = scaler.transform(entrada)
+    # Normalizar os dados de entrada usando o mesmo scaler do treino
+    input_data = scaler.transform([[peso_input, espessura_input]])
+    prediction = model.predict(input_data)[0]
+    probabilities = model.predict_proba(input_data)[0]
+    classes_names = model.classes_
 
-    # Realizar a predição
-    predicao = model.predict(entrada_scaled)[0]
+    confidence = probabilities[list(classes_names).index(prediction)] * 100
 
-    # Mapeamento das classes
-    # 0: Aprovada, 1: Retrabalho, 2: Refugo (ou vice-versa dependendo do cluster)
-    labels_map = {
-        0: {"nome": "Aprovada", "status": "verde"},
-        1: {"nome": "Retrabalho", "status": "amarelo"},
-        2: {"nome": "Refugo", "status": "vermelho"},
-    }
+    st.markdown("### Resultado da Inspeção:")
 
-    resultado = labels_map.get(
-        predicao, {"nome": "Desconhecido", "status": "amarelo"}
-    )
-
-    st.markdown("### Resultado da Avaliação:")
-    if resultado["status"] == "verde":
-      st.success(f"🟢 **PEÇA APROVADA** (Classe: {resultado['nome']})")
-    elif resultado["status"] == "amarelo":
-      st.warning(f"🟡 **PEÇA PARA RETRABALHO** (Classe: {resultado['nome']})")
+    if prediction == "Aprovada":
+      st.success(
+          f"**Status: Aprovada**\n\nGrau de Confiança do Modelo:"
+          f" **{confidence:.1f}%**"
+      )
+    elif prediction == "Retrabalho":
+      st.warning(
+          f"**Status: Retrabalho**\n\nGrau de Confiança do Modelo:"
+          f" **{confidence:.1f}%**"
+      )
     else:
-      st.error(f"🔴 **PEÇA REFUGADA** (Classe: {resultado['nome']})")
+      st.error(
+          f"**Status: Refugo**\n\nGrau de Confiança do Modelo:"
+          f" **{confidence:.1f}%**"
+      )
 
 with col2:
-  st.subheader("📊 Performance do Modelo")
-  st.markdown("Matriz de Confusão no conjunto de teste:")
+  st.subheader("📊 Desempenho do Modelo")
+  st.metric(label="Acurácia do Modelo no Conjunto de Teste", value=f"{accuracy * 100:.2f}%")
 
-  # Cálculo da Matriz de Confusão
-  y_pred = model.predict(X_test)
-  cm = confusion_matrix(y_test, y_pred)
-
-  # Exibição do Gráfico com Matplotlib
-  fig, ax = plt.subplots(figsize=(5, 4))
+  # Exibir Matriz de Confusão
+  fig, ax = plt.subplots(figsize=(5, 3.8))
   disp = ConfusionMatrixDisplay(
-      confusion_matrix=cm,
-      display_labels=["Aprovada", "Retrabalho", "Refugo"],
+      confusion_matrix=conf_matrix,
+      display_matrix=["Aprovada", "Retrabalho", "Refugo"],
   )
-  disp.plot(ax=ax, cmap="Blues", colorbar=False)
-  plt.title("Matriz de Confusão - SVM", fontsize=10)
+  disp.plot(ax=ax, cmap="Blues", values_format="d")
+  plt.title("Matriz de Confusão", fontsize=10)
   st.pyplot(fig)
+
+# --- Seção Extra: Gráfico de Dispersão ---
+with st.expander("📈 Visualizar Distribuição e Posição da Peça Inspecionada"):
+  fig_scatter, ax_scatter = plt.subplots(figsize=(8, 4.5))
+  colors = {"Aprovada": "green", "Retrabalho": "orange", "Refugo": "red"}
+
+  for classe, cor in colors.items():
+    subset = df[df["Classe"] == classe]
+    ax_scatter.scatter(
+        subset["Peso_gramas"],
+        subset["Espessura_mm"],
+        label=classe,
+        color=cor,
+        alpha=0.4,
+        s=15,
+    )
+
+  # Marcar a peça avaliada pelo usuário
+  ax_scatter.scatter(
+      [peso_input],
+      [espessura_input],
+      color="black",
+      marker="X",
+      s=120,
+      label="Peça Atual",
+      edgecolors="white",
+  )
+
+  ax_scatter.set_xlabel("Peso (gramas)")
+  ax_scatter.set_ylabel("Espessura (mm)")
+  ax_scatter.legend(loc="upper right")
+  ax_scatter.set_title("Distribuição do Lote vs. Peça Inspecionada")
+  st.pyplot(fig_scatter)
