@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 
-# 1. Geração de dados sintéticos otimizada com cache
+# 1. Geração de dados sintéticos com cache
 @st.cache_data
 def load_data():
   np.random.seed(42)
@@ -64,8 +64,8 @@ def train_model(df):
 df = load_data()
 model, scaler, accuracy, conf_matrix = train_model(df)
 
-# --- INTERFACE DO USUÁRIO ---
-st.title("⚙️ Sistema Inteligente de Controle de Qualidade")
+# --- INTERFACE DO UTILIZADOR ---
+st.title("⚙️ Sistema Inteligente de Controlo de Qualidade")
 st.markdown(
     "Aplicação baseada em Machine Learning (**SVM**) para classificação e"
     " inspeção de peças usinadas."
@@ -89,8 +89,13 @@ with col1:
   )
 
   if st.button("Avaliar Peça", type="primary", use_container_width=True):
-    # Normalizar os dados de entrada usando o mesmo scaler do treino
-    input_data = scaler.transform([[peso_input, espessura_input]])
+    # Criar DataFrame de entrada mantendo os nomes das colunas do treino
+    input_df = pd.DataFrame(
+        [[peso_input, espessura_input]],
+        columns=["Peso_gramas", "Espessura_mm"],
+    )
+    input_data = scaler.transform(input_df)
+
     prediction = model.predict(input_data)[0]
     probabilities = model.predict_proba(input_data)[0]
     classes_names = model.classes_
@@ -117,4 +122,52 @@ with col1:
 
 with col2:
   st.subheader("📊 Desempenho do Modelo")
-  st.metric(label="Acurácia do Modelo no Conjunto de Teste", value=f"{accuracy * 10
+  st.metric(
+      label="Acurácia do Modelo no Conjunto de Teste",
+      value=f"{accuracy * 100:.2f}%",
+  )
+
+  # Exibir Matriz de Confusão
+  fig, ax = plt.subplots(figsize=(5, 3.8))
+  disp = ConfusionMatrixDisplay(
+      confusion_matrix=conf_matrix,
+      display_labels=["Aprovada", "Retrabalho", "Refugo"],
+  )
+  disp.plot(ax=ax, cmap="Blues", values_format="d")
+  plt.title("Matriz de Confusão", fontsize=10)
+  st.pyplot(fig)
+  plt.close(fig)
+
+# --- Seção Extra: Gráfico de Dispersão ---
+with st.expander("📈 Visualizar Distribuição e Posição da Peça Inspecionada"):
+  fig_scatter, ax_scatter = plt.subplots(figsize=(8, 4.5))
+  colors = {"Aprovada": "green", "Retrabalho": "orange", "Refugo": "red"}
+
+  for classe, cor in colors.items():
+    subset = df[df["Classe"] == classe]
+    ax_scatter.scatter(
+        subset["Peso_gramas"],
+        subset["Espessura_mm"],
+        label=classe,
+        color=cor,
+        alpha=0.4,
+        s=15,
+    )
+
+  # Marcar a peça avaliada pelo utilizador
+  ax_scatter.scatter(
+      [peso_input],
+      [espessura_input],
+      color="black",
+      marker="X",
+      s=120,
+      label="Peça Atual",
+      edgecolors="white",
+  )
+
+  ax_scatter.set_xlabel("Peso (gramas)")
+  ax_scatter.set_ylabel("Espessura (mm)")
+  ax_scatter.legend(loc="upper right")
+  ax_scatter.set_title("Distribuição do Lote vs. Peça Inspecionada")
+  st.pyplot(fig_scatter)
+  plt.close(fig_scatter)
