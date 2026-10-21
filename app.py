@@ -117,47 +117,4 @@ with col1:
 
 with col2:
   st.subheader("📊 Desempenho do Modelo")
-  st.metric(label="Acurácia do Modelo no Conjunto de Teste", value=f"{accuracy * 100:.2f}%")
-
-  # Exibir Matriz de Confusão
-  fig, ax = plt.subplots(figsize=(5, 3.8))
-  disp = ConfusionMatrixDisplay(
-      confusion_matrix=conf_matrix,
-      display_matrix=["Aprovada", "Retrabalho", "Refugo"],
-  )
-  disp.plot(ax=ax, cmap="Blues", values_format="d")
-  plt.title("Matriz de Confusão", fontsize=10)
-  st.pyplot(fig)
-
-# --- Seção Extra: Gráfico de Dispersão ---
-with st.expander("📈 Visualizar Distribuição e Posição da Peça Inspecionada"):
-  fig_scatter, ax_scatter = plt.subplots(figsize=(8, 4.5))
-  colors = {"Aprovada": "green", "Retrabalho": "orange", "Refugo": "red"}
-
-  for classe, cor in colors.items():
-    subset = df[df["Classe"] == classe]
-    ax_scatter.scatter(
-        subset["Peso_gramas"],
-        subset["Espessura_mm"],
-        label=classe,
-        color=cor,
-        alpha=0.4,
-        s=15,
-    )
-
-  # Marcar a peça avaliada pelo usuário
-  ax_scatter.scatter(
-      [peso_input],
-      [espessura_input],
-      color="black",
-      marker="X",
-      s=120,
-      label="Peça Atual",
-      edgecolors="white",
-  )
-
-  ax_scatter.set_xlabel("Peso (gramas)")
-  ax_scatter.set_ylabel("Espessura (mm)")
-  ax_scatter.legend(loc="upper right")
-  ax_scatter.set_title("Distribuição do Lote vs. Peça Inspecionada")
-  st.pyplot(fig_scatter)
+  st.metric(label="Acurácia do Modelo no Conjunto de Teste", value=f"{accuracy * 10
